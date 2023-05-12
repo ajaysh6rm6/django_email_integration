@@ -1,0 +1,105 @@
+>>Goto gmail [https://myaccount.google.com/apppasswords] to generate password [yvgpomnifuzrcbka]
+
+>>setting.py
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_USE_TLS = True
+EMAIL_PORT = 587
+EMAIL_HOST_USER = #sender's email-id
+EMAIL_HOST_PASSWORD = #password associated with above email-id
+
+>>>WITHOUT HTML TEMPLATES
+>>views.py
+from django.conf import settings
+from django.core.mail import send_mail
+
+subject = 'Echo buddy message for '+reqContactNo
+message = 'Contact no : '+reqContactNo+' , Msg : '+reqYourMessage
+email_from = settings.EMAIL_HOST_USER
+recipient_list = ['sridhar.pallia@diginxthlt.com','sujatha.visweswara@diginxthlt.com']
+send_mail( subject, message, email_from, recipient_list, fail_silently=False )
+
+
+
+>>>WITH HTML TEMPLATES 
+>>views.py
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+
+from django.conf import settings
+from django.template.loader import render_to_string
+from django.core.mail import EmailMultiAlternatives
+
+from rest_framework import serializers
+
+class SendMailSerializer(serializers.Serializer):
+    toemail = serializers.ListField(child=serializers.EmailField(), required=True, min_length=1)
+    subject = serializers.CharField(max_length=255, required=True)
+    ccemail = serializers.ListField(child=serializers.EmailField(), required=False)
+    bccemail = serializers.ListField(child=serializers.EmailField(), required=False)
+    replyemail = serializers.ListField(child=serializers.EmailField(), required=False)
+    contents = serializers.DictField(required=False)
+
+@api_view(['POST'],)
+def send_mail_to_echo_user(request):
+    if request.method == 'POST':
+        serializer = SendMailSerializer(data=request.data)
+        if serializer.is_valid():
+            req_toemail = serializer.validated_data.get('toemail', [])
+            req_subject = serializer.validated_data.get('subject', '')
+            req_ccemail = serializer.validated_data.get('ccemail', [])
+            req_bccemail = serializer.validated_data.get('bccemail', [])
+            req_replyemail = serializer.validated_data.get('replyemail', [])
+            req_contents = serializer.validated_data.get('contents')
+            # CHECK IF KEY EXISTS IN "contents" DICTIONARY IF NOT ""
+            username = req_contents.get("username", "")
+            password = req_contents.get("password", "")
+            name = req_contents.get("name", "")
+            loginurl = req_contents.get("loginurl", "")    
+
+            # SENDING MAIL TO ECHO USER
+            c = {}
+            c["username"] = username
+            c["password"] = password
+            c["name"] = name
+            c["loginurl"] = loginurl
+            html_content = render_to_string('sendmailtoechouser.html', c, request=request)
+            try:
+                # SETTING EMAIL CONFIGURATION
+                settings.EMAIL_HOST_USER = 'echobuddy@diginxthlt.com'
+                settings.EMAIL_HOST_PASSWORD = 'kfcnhpyirakqxjap'
+                msg = EmailMultiAlternatives(
+                    subject = req_subject,
+                    body = 'Credential for echo Wellness',
+                    from_email = f'echo companion<{settings.EMAIL_HOST_USER}>',
+                    to = req_toemail,
+                    cc = req_ccemail,
+                    bcc = req_bccemail,
+                    reply_to = req_replyemail,
+                )
+                msg.attach_alternative(html_content, "text/html")
+                msg.attach_file('static/echocompanionassets/echo_companion_user_guide.pdf') 
+                msg.send(fail_silently=False)
+
+                statusCode = status.HTTP_200_OK
+                res_item={'msg' : 'success, check your email'}   
+            except Exception as e:
+                statusCode = status.HTTP_400_BAD_REQUEST
+                res_item={'msg' : 'failed', 'errors':str(e)}             
+        else:
+            statusCode =status.HTTP_400_BAD_REQUEST
+            res_item = {'msg': 'failed', 'serializer errors': serializer.errors}
+        response = {
+            "isBase64Encoded": False,
+            "statusCode": statusCode,
+            "body": res_item,
+            "headers": {
+                'Content-Type' : 'application/json',
+                'Access-Control-Allow-Origin' : '*',
+                'Allow' : ['POST', 'OPTIONS'],
+                'Access-Control-Allow-Methods' : ['POST', 'OPTIONS'],
+                'Access-Control-Allow-Headers' : '*'
+                }
+            }
+        return Response(response)
